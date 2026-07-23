@@ -1,0 +1,81 @@
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <arpa/inet.h>
+
+#define PORT 8081
+#define BUFFER_SIZE 1024
+
+int main() {
+    int server_fd, new_socket;
+    struct sockaddr_in address;
+    int addrlen = sizeof(address);
+    char buffer[BUFFER_SIZE];
+
+    server_fd = socket(AF_INET, SOCK_STREAM, 0);
+
+    if (server_fd == -1) {
+        printf("Socket creation failed!\n");
+        exit(1);
+    }
+
+    // Optional: Allow immediate reuse of the port to avoid "Bind failed: Address already in use"
+    int opt = 1;
+    setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = INADDR_ANY;
+    address.sin_port = htons(PORT);
+
+    if (bind(server_fd, (struct sockaddr *)&address, sizeof(address)) < 0) {
+        perror("Bind failed");
+        exit(1);
+    }
+
+    listen(server_fd, 5);
+    printf("Server is waiting for connection...\n");
+
+    new_socket = accept(server_fd, (struct sockaddr *)&address, (socklen_t *)&addrlen);
+
+    if (new_socket < 0) {
+        printf("Accept failed!\n");
+        exit(1);
+    }
+
+    printf("Client Connected.\n");
+
+    while (1) {
+        memset(buffer, 0, BUFFER_SIZE);
+        
+        // Fix 1: Check if read fails or if the client disconnected (bytes_read <= 0)
+        ssize_t bytes_read = read(new_socket, buffer, BUFFER_SIZE - 1);
+        if (bytes_read <= 0) {
+            printf("\nClient disconnected unexpectedly.\n");
+            break;
+        }
+
+        // Fix 2: Strip any trailing newline or carriage return characters (\r or \n)
+        buffer[strcspn(buffer, "\r\n")] = '\0';
+
+        printf("Client: %s\n", buffer);
+
+        // Check for exit command
+        if (strcmp(buffer, "bye") == 0) {
+            printf("Client disconnected.\n");
+            break;
+        }
+
+        printf("Server: ");
+        if (fgets(buffer, BUFFER_SIZE, stdin) != NULL) {
+            buffer[strcspn(buffer, "\r\n")] = '\0';
+            send(new_socket, buffer, strlen(buffer) + 1, 0);
+        }
+    }
+
+    close(new_socket);
+    close(server_fd);
+
+    return 0;
+}
